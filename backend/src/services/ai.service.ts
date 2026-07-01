@@ -3,6 +3,7 @@ import { GoogleGenAI } from '@google/genai';
 import { PrismaClient } from '@prisma/client';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
+import { KeywordFilter } from './KeywordFilter';
 
 // Load environment variables from the shared configuration directory
 dotenv.config({ path: path.resolve(__dirname, '../../../config/env/.env') });
@@ -47,6 +48,15 @@ export class AIService {
    * Leverages Structured Outputs (JSON Schema) and exponential backoff retry for rate limits.
    */
   public static async classifyEmail(subject: string, body: string): Promise<ClassificationResult> {
+    // 1. Try fast heuristic filter first to save cost and reduce latency
+    const heuristicCategory = KeywordFilter.classify(body);
+    if (heuristicCategory) {
+      return {
+        category: heuristicCategory,
+        confidence: 1.0,
+      };
+    }
+
     const provider = process.env.AI_PROVIDER || 'openai';
 
     if (provider === 'gemini') {

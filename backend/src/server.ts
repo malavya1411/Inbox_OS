@@ -15,6 +15,18 @@ app.use(express.json());
 app.use(cookieParser());
 
 /**
+ * GET /api/health
+ * Lightweight API health check endpoint.
+ */
+app.get('/api/health', (req: Request, res: Response) => {
+  res.status(200).json({
+    status: 'ok',
+    timestamp: new Date(),
+  });
+});
+
+
+/**
  * POST /api/auth/register
  * Creates a new user in the database.
  */
@@ -128,6 +140,37 @@ app.get('/api/auth/me', requireAuth, (req: AuthenticatedRequest, res: Response) 
   return res.status(200).json({
     user: req.user,
   });
+});
+
+/**
+ * GET /api/users/profile
+ * Fetch authenticated user profile details.
+ */
+app.get('/api/users/profile', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        createdAt: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    return res.status(200).json(user);
+  } catch (error) {
+    console.error('Fetch profile error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 /**
@@ -313,6 +356,63 @@ app.put('/api/users/me/settings', requireAuth, async (req: AuthenticatedRequest,
     });
   } catch (error) {
     console.error('Update settings error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * GET /api/emails/search
+ * Search user's emails by subject or body with pagination.
+ */
+app.get('/api/emails/search', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { q } = req.query;
+    if (typeof q !== 'string' || !q.trim()) {
+      return res.status(400).json({ error: 'Query parameter "q" is required and cannot be empty' });
+    }
+
+    // Parse pagination parameters
+    const limitQuery = parseInt(req.query.limit as string, 10);
+    const offsetQuery = parseInt(req.query.offset as string, 10);
+
+    const limit = isNaN(limitQuery) || limitQuery <= 0 ? 20 : Math.min(limitQuery, 20);
+    const offset = isNaN(offsetQuery) || offsetQuery < 0 ? 0 : offsetQuery;
+
+    // Search query object
+    const searchFilter = {
+      userId,
+      OR: [
+        { subject: { contains: q } },
+        { body: { contains: q } },
+      ],
+    };
+
+    // Run both count and select queries concurrently
+    const [total, emails] = await Promise.all([
+      prisma.email.count({ where: searchFilter }),
+      prisma.email.findMany({
+        where: searchFilter,
+        take: limit,
+        skip: offset,
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    return res.status(200).json({
+      emails,
+      pagination: {
+        total,
+        limit,
+        offset,
+      },
+    });
+  } catch (error) {
+    console.error('Email search error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });

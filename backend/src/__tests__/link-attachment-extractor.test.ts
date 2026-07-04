@@ -2,13 +2,7 @@ import { LinkAttachmentExtractorService } from '../services/parser/link-attachme
 import { ParsedMail } from 'mailparser';
 import { AIService } from '../services/ai.service';
 
-jest.mock('../services/ai.service', () => {
-  return {
-    AIService: {
-      categorizeLink: jest.fn().mockResolvedValue('meeting'),
-    },
-  };
-});
+// We will use jest.spyOn for testing the LLM fallback
 
 describe('LinkAttachmentExtractorService', () => {
   describe('extractLinks', () => {
@@ -63,14 +57,20 @@ describe('LinkAttachmentExtractorService', () => {
         <p>Check out this <a href="https://example.com/something-ambiguous">awesome link</a>.</p>
       `;
 
+      // Spy on AIService.categorizeLink
+      const spy = jest.spyOn(AIService, 'categorizeLink').mockResolvedValue('meeting');
+
       // Without LLM fallback, it should default to 'other'
       const linksNoLlm = await LinkAttachmentExtractorService.extractLinks(htmlBody);
       expect(linksNoLlm[0].category).toBe('other');
 
       // With LLM fallback, it should call AIService.categorizeLink and update category
       const linksWithLlm = await LinkAttachmentExtractorService.extractLinks(htmlBody, { useLlmFallback: true });
-      expect(AIService.categorizeLink).toHaveBeenCalledWith('https://example.com/something-ambiguous', 'awesome link');
-      expect(linksWithLlm[0].category).toBe('meeting'); // Mock returns 'meeting'
+      expect(spy).toHaveBeenCalledWith('https://example.com/something-ambiguous', 'awesome link');
+      expect(linksWithLlm[0].category).toBe('meeting'); // Spy mocked return value
+
+      // Clean up spy
+      spy.mockRestore();
     });
   });
 

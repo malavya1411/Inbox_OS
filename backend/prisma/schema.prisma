@@ -8,6 +8,21 @@ generator client {
 }
 
 model User {
+  id           String        @id @default(uuid())
+  email        String        @unique
+  passwordHash String
+  createdAt    DateTime      @default(now())
+  emails       Email[]
+  settings     UserSettings?
+  feedbacks    UserFeedback[]
+}
+
+model UserSettings {
+  id                  String  @id @default(uuid())
+  theme               String  @default("dark")
+  signature           String?
+  autoReply           Boolean @default(false)
+  aiPreferenceProfile String?
   id            String           @id @default(uuid())
   email         String           @unique
   passwordHash  String
@@ -60,6 +75,8 @@ model Email {
   threadId    String
   thread      Thread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
   actionItems ActionItem[]
+  embedding String?
+  feedbacks UserFeedback[]
   reminders   Reminder[]
   embedding   String?
 
@@ -97,6 +114,16 @@ model ActionItem {
   email           Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
 }
 
+model UserFeedback {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailId        String
+  email          Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  feedbackType   String
+  originalValue  String
+  correctedValue String?
+  createdAt      DateTime @default(now())
 // ─── Reminder System ──────────────────────────────────────────────────────────
 
 model Reminder {

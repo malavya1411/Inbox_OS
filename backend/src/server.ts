@@ -2006,6 +2006,87 @@ app.patch(
   }
 );
 
+/**
+ * POST /api/feedback
+ * Records user feedback on email classifications, validates payload using Zod,
+ * and rate-limits to 100 feedbacks/day per user.
+ */
+const feedbackInputSchema = z.object({
+  emailId: z.string().min(1),
+  feedbackType: z.enum(['thumbs_up', 'thumbs_down', 'category_correction', 'priority_adjustment']),
+  correctedValue: z.string().optional(),
+});
+
+app.post('/api/feedback', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // 1. Zod Validation
+    const validation = feedbackInputSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({
+        error: 'Invalid payload schema',
+        details: validation.error.flatten(),
+      });
+    }
+
+    const { emailId, feedbackType, correctedValue } = validation.data;
+
+    // 2. Rate limiting check (100 feedbacks/day per user)
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const feedbackCount = await prisma.userFeedback.count({
+      where: {
+        userId,
+        createdAt: {
+          gte: oneDayAgo,
+        },
+      },
+    });
+
+    if (feedbackCount >= 100) {
+      return res.status(429).json({ error: 'Rate limit exceeded: 100 feedbacks per day' });
+    }
+
+    // 3. Record Feedback
+    await FeedbackCollectorService.recordFeedback(userId, emailId, feedbackType, correctedValue);
+
+    return res.status(201).json({ message: 'Feedback recorded successfully' });
+  } catch (error) {
+    console.error('Record feedback error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * GET /api/users/me/ai-profile
+ * Exposes learned user preference profile.
+ */
+app.get('/api/users/me/ai-profile', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const settings = await prisma.userSettings.findUnique({
+      where: { userId },
+    });
+
+    if (!settings || !settings.aiPreferenceProfile) {
+      return res.status(200).json({ weekly: {} });
+    }
+
+    const profile = JSON.parse(settings.aiPreferenceProfile);
+    return res.status(200).json(profile);
+  } catch (error) {
+    console.error('Fetch AI profile error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Start Server
 
 const server = app.listen(PORT, () => {

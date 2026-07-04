@@ -8,6 +8,8 @@ import express, { Request, Response, NextFunction } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
+import compression from 'compression';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { AuthService } from './services/auth.service';
@@ -31,10 +33,26 @@ import { registerWorkerHandlers } from './worker';
 import { Server as SocketIoServer } from 'socket.io';
 import { WebSocketService } from './services/websocket.service';
 import { TelegramBotService } from './services/telegram-bot.service';
+import { LinkAttachmentExtractorService } from './services/parser/link-attachment-extractor.service';
 import { TelegramNotificationService } from './services/telegram-notification.service';
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { schemas, sanitizeHtml, sanitizeString } from './utils/validation';
+
+// Route imports
+import { ragRouter } from './routes/rag.routes';
+import { aiRouter } from './routes/ai.routes';
+import { tasksRouter } from './routes/tasks.routes';
+import { calendarRouter } from './routes/calendar.routes';
+import { expensesRouter } from './routes/expenses.routes';
+import { digestsRouter } from './routes/digests.routes';
+import { notificationsRouter } from './routes/notifications.routes';
+import { feedbackRouter } from './routes/feedback.routes';
+import { integrationsRouter } from './routes/integrations.routes';
+
+import { CalendarExtractorService } from './services/actions/calendar-extractor.service';
+import { CalendarCreatorService } from './services/actions/calendar-creator.service';
+import { calendarEventsQueue } from './jobs/calendar-events.job';
 
 const app = express();
 
@@ -60,60 +78,54 @@ if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && proc
 const prisma = new PrismaClient();
 const PORT = process.env.PORT || 8000;
 
-// Trust the first reverse proxy in production so req.ip cannot be spoofed with
-// an arbitrary X-Forwarded-For value.
-app.set('trust proxy', process.env.NODE_ENV === 'production' ? 1 : false);
+// Security & performance middleware
+app.use(helmet({
+  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false,
+}));
+app.use(compression());
 
-// Configure Helmet middleware for HTTP security headers
-app.use(
-  helmet({
-    hsts: {
-      maxAge: 31536000, // 1 year in seconds
-      includeSubDomains: true,
-      preload: true,
-    },
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
-        styleSrc: ["'self'"],
-        imgSrc: ["'self'", 'data:', 'https:'],
-        connectSrc: ["'self'", 'https://accounts.google.com'],
-        fontSrc: ["'self'"],
-        objectSrc: ["'none'"],
-        mediaSrc: ["'self'"],
-        frameSrc: ["'none'"],
-      },
-    },
-    xFrameOptions: { action: 'deny' },
-    xContentTypeOptions: true,
-    referrerPolicy: { policy: 'no-referrer' },
-    hidePoweredBy: true,
-  })
-);
+// Request timeout (30 seconds)
+app.use((req, res, next) => {
+  res.setTimeout(30000, () => {
+    res.status(408).json({ error: 'Request timeout' });
+  });
+  next();
+});
 
-// Configure CORS middleware with environment-specific allowed origins
-const allowedOrigins =
-  process.env.NODE_ENV === 'production'
-    ? process.env.ALLOWED_ORIGINS?.split(',')
-        .map((origin) => origin.trim())
-        .filter(Boolean) || []
-    : [
-        'http://localhost:5173',
-        'http://localhost:3000',
-        'http://127.0.0.1:5173',
-        'http://127.0.0.1:3000',
-      ];
+// CORS: allow localhost in dev + production frontend domains
+const ALLOWED_ORIGINS = [
+  'http://localhost',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://127.0.0.1',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:5173',
+  ...(process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : []),
+  ...(process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()) : []),
+];
 
-type CorsError = Error & { code: 'CORS_NOT_ALLOWED' };
-
-const corsOrigin = (
-  origin: string | undefined,
-  callback: (error: Error | null, allowed?: boolean) => void
-) => {
-  // Requests without an Origin header include server-to-server and CLI clients.
-  if (!origin || allowedOrigins.includes(origin)) {
-    callback(null, true);
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (
+    origin &&
+    (ALLOWED_ORIGINS.some(o => origin === o) ||
+      origin.startsWith('http://localhost:') ||
+      origin.startsWith('http://127.0.0.1:'))
+  ) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader(
+    'Access-Control-Allow-Methods',
+    'GET,PUT,POST,DELETE,OPTIONS,PATCH'
+  );
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Origin, X-Requested-With, Content-Type, Accept, Authorization'
+  );
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
     return;
   }
 
@@ -587,6 +599,7 @@ app.post('/api/webhooks/incoming', async (req: Request, res: Response) => {
     }
 
     // 4. Create the Email record
+    const links = await LinkAttachmentExtractorService.extractLinks(body);
     const emailRecord = await prisma.email.create({
       data: {
         messageId,
@@ -598,6 +611,8 @@ app.post('/api/webhooks/incoming', async (req: Request, res: Response) => {
         status: 'UNREAD',
         userId: user.id,
         threadId,
+        links: links as any,
+        attachments: [],
       },
     });
 
@@ -918,8 +933,238 @@ app.get(
         emailAddress: emailValidation.data,
       });
     } catch (error) {
-      console.error('OAuth callback error:', error);
       return res.status(500).json({ error: 'OAuth integration failed' });
+    }
+  }
+);
+
+/**
+ * GET /api/integrations/google_calendar/status
+ * Check if the user has connected Google Calendar.
+ */
+app.get(
+  '/api/integrations/google_calendar/status',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user?.userId;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    try {
+      const integration = await prisma.integration.findUnique({
+        where: {
+          userId_provider: {
+            userId,
+            provider: 'google_calendar',
+          },
+        },
+      });
+      return res.json({ connected: !!integration });
+    } catch (error) {
+      console.error('Error fetching calendar status:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  }
+);
+
+/**
+ * GET /api/integrations/google_calendar/auth
+ * Generates the Google Calendar OAuth URL.
+ */
+app.get(
+  '/api/integrations/google_calendar/auth',
+  requireAuth,
+  (req: AuthenticatedRequest, res: Response) => {
+    const redirectUri = (process.env.GMAIL_REDIRECT_URI || 'http://localhost:8000/api/integrations/gmail/callback')
+      .replace('/gmail/callback', '/google_calendar/callback');
+
+    const calendarOauth2Client = new google.auth.OAuth2(
+      process.env.GMAIL_CLIENT_ID,
+      process.env.GMAIL_CLIENT_SECRET,
+      redirectUri
+    );
+
+    const url = calendarOauth2Client.generateAuthUrl({
+      access_type: 'offline',
+      scope: [
+        'https://www.googleapis.com/auth/calendar',
+        'https://www.googleapis.com/auth/calendar.events'
+      ],
+      prompt: 'consent',
+      state: req.user?.userId,
+    });
+    return res.json({ url });
+  }
+);
+
+/**
+ * GET /api/integrations/google_calendar/callback
+ * Exchanges the auth code for tokens and saves them to Prisma securely.
+ */
+app.get(
+  '/api/integrations/google_calendar/callback',
+  async (req: Request, res: Response) => {
+    const code = req.query.code as string;
+    const userId = req.query.state as string;
+
+    if (!code || !userId) {
+      return res
+        .status(400)
+        .json({ error: 'Missing code or state parameters' });
+    }
+
+    try {
+      const calendarOauth2Client = new google.auth.OAuth2(
+        process.env.GMAIL_CLIENT_ID,
+        process.env.GMAIL_CLIENT_SECRET,
+        (process.env.GMAIL_REDIRECT_URI || 'http://localhost:8000/api/integrations/gmail/callback')
+          .replace('/gmail/callback', '/google_calendar/callback')
+      );
+
+      const { tokens } = await calendarOauth2Client.getToken(code);
+      const encryptedTokens = encrypt(JSON.stringify(tokens));
+
+      await prisma.integration.upsert({
+        where: {
+          userId_provider: {
+            userId,
+            provider: 'google_calendar',
+          },
+        },
+        update: {
+          encryptedTokens,
+          updatedAt: new Date(),
+        },
+        create: {
+          userId,
+          provider: 'google_calendar',
+          encryptedTokens,
+        },
+      });
+
+      // Redirect back to frontend
+      return res.redirect('http://localhost:5173/');
+    } catch (error) {
+      console.error('Calendar OAuth callback error:', error);
+      return res.status(500).json({ error: 'OAuth integration failed' });
+    }
+  }
+);
+
+/**
+ * POST /api/actions/calendar/events
+ * Triggers extracting meeting details from email and creating a calendar event.
+ */
+app.post(
+  '/api/actions/calendar/events',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const { emailId } = req.body;
+    const userId = req.user?.userId;
+
+    if (!emailId || !userId) {
+      return res.status(400).json({ error: 'Missing emailId or userId' });
+    }
+
+    try {
+      // 1. Fetch Email
+      const email = await prisma.email.findUnique({
+        where: { id: emailId },
+        include: { analysis: true },
+      });
+
+      if (!email) {
+        return res.status(404).json({ error: 'Email not found' });
+      }
+
+      // 2. Extract Event Details
+      const eventData = CalendarExtractorService.extractEventDetails(email.analysis || email);
+      if (!eventData) {
+        return res.status(400).json({ error: 'No meeting details could be extracted from this email' });
+      }
+
+      // 3. Attempt creation
+      try {
+        const savedEvent = await CalendarCreatorService.createGoogleCalendarEvent(eventData, userId, emailId);
+        return res.status(201).json({ success: true, event: savedEvent });
+      } catch (err: any) {
+        if (err.message === 'MISSING_GOOGLE_CALENDAR_CREDENTIALS') {
+          logger.info(`[CalendarRoute] Missing credentials. Queueing calendar event creation for email: ${emailId}`);
+          
+          // Save a placeholder event with 'pending' status in db
+          const pendingEvent = await prisma.calendarEvent.upsert({
+            where: {
+              googleEventId: 'failed_' + emailId,
+            },
+            update: {
+              status: 'pending',
+            },
+            create: {
+              userId,
+              emailId,
+              title: eventData.title,
+              startTime: eventData.startTime,
+              endTime: eventData.endTime,
+              location: eventData.location,
+              attendees: eventData.attendees,
+              meetingLink: eventData.meetingLink,
+              googleEventId: 'failed_' + emailId,
+              status: 'pending',
+            },
+          });
+
+          await calendarEventsQueue.add('createEvent', {
+            userId,
+            emailId,
+            eventData,
+          }, {
+            attempts: 5,
+            backoff: {
+              type: 'exponential',
+              delay: 5000,
+            },
+          });
+
+          return res.status(202).json({
+            success: true,
+            message: 'Google Calendar credentials missing. Retrying creation in background.',
+            event: pendingEvent,
+          });
+        }
+        throw err;
+      }
+    } catch (error: any) {
+      console.error('Error creating calendar event:', error);
+      return res.status(500).json({ error: error.message || 'Internal Server Error' });
+    }
+  }
+);
+
+/**
+ * GET /api/actions/calendar/events/:emailId
+ * Retrieves calendar events associated with an email.
+ */
+app.get(
+  '/api/actions/calendar/events/:emailId',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    const { emailId } = req.params;
+    const userId = req.user?.userId;
+
+    if (!emailId || !userId) {
+      return res.status(400).json({ error: 'Missing emailId or userId' });
+    }
+
+    try {
+      const events = await prisma.calendarEvent.findMany({
+        where: {
+          emailId: emailId as string,
+          userId: userId as string,
+        },
+      });
+      return res.json(events);
+    } catch (error) {
+      console.error('Error fetching calendar events:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
     }
   }
 );
@@ -1041,7 +1286,7 @@ app.get(
       const hooks = await prisma.webhookEndpoint.findMany({
         where: { userId },
       });
-      const formatted = hooks.map((h) => ({
+      const formatted = hooks.map((h: any) => ({
         id: h.id,
         targetUrl: h.targetUrl,
         events: JSON.parse(h.events),
@@ -1135,6 +1380,36 @@ app.delete(
     }
   }
 );
+
+// PUT alias for PATCH /api/webhooks/config/:id
+app.put(
+  '/api/webhooks/config/:id',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const { targetUrl, events } = req.body;
+      const id = req.params.id as string;
+
+      const hook = await prisma.webhookEndpoint.findUnique({ where: { id } });
+      if (!hook || hook.userId !== userId)
+        return res.status(404).json({ error: 'Not found' });
+
+      await prisma.webhookEndpoint.update({
+        where: { id },
+        data: {
+          ...(targetUrl && { targetUrl }),
+          ...(events && { events: JSON.stringify(events) }),
+        },
+      });
+      return res.json({ message: 'Webhook updated' });
+    } catch (err) {
+      return res.status(500).json({ error: 'Failed to update webhook' });
+    }
+  }
+);
+
 
 /**
  * GET /api/dashboard/stats
@@ -1649,13 +1924,9 @@ app.put(
         validation.data;
 
       // Run delete-then-create inside a transaction
-      const updatedRule = await prisma.$transaction(async (tx) => {
-        await tx.ruleCondition.deleteMany({
-          where: { ruleId: idValidation.data },
-        });
-        await tx.ruleAction.deleteMany({
-          where: { ruleId: idValidation.data },
-        });
+      const updatedRule = await prisma.$transaction(async (tx: any) => {
+        await tx.ruleCondition.deleteMany({ where: { ruleId: id } });
+        await tx.ruleAction.deleteMany({ where: { ruleId: id } });
 
         return tx.rule.update({
           where: { id: idValidation.data },
@@ -1791,39 +2062,296 @@ app.get('/api/auth/google', (req: Request, res: Response) => {
 });
 
 /**
- * Handle security-related request errors without leaking internal details.
+ * POST /api/auth/refresh
+ * Refresh JWT token using existing valid cookie token.
  */
-app.use(
-  (
-    err: Error & { code?: string; type?: string },
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ) => {
-    if (err.code === 'CORS_NOT_ALLOWED') {
-      return res.status(403).json({ error: 'Origin not allowed' });
-    }
+app.post('/api/auth/refresh', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    const email = req.user?.email;
+    if (!userId || !email) return res.status(401).json({ error: 'Unauthorized' });
 
-    if (err.type === 'entity.too.large') {
-      const ip = req.ip || req.socket.remoteAddress || 'unknown';
-      const cleanIp = Array.isArray(ip) ? ip[0] : ip;
+    const newToken = AuthService.generateToken(userId, email);
+    res.cookie('token', newToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60 * 1000,
+    });
+    return res.json({ message: 'Token refreshed successfully' });
+  } catch (err: any) {
+    logger.error('[Auth] Refresh error:', err.message);
+    return res.status(500).json({ error: 'Failed to refresh token' });
+  }
+});
 
-      // Use standardized security event logging
-      logger.warn('Request payload too large', {
-        ip: cleanIp,
-        path: req.path,
-        method: req.method,
-        limit: '10MB',
+/**
+ * PUT /api/users/profile
+ * Update user profile fields
+ */
+const updateProfileSchema = z.object({
+  email: z.string().email().optional(),
+});
+
+app.put(
+  '/api/users/profile',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+      const validation = updateProfileSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ error: 'Invalid payload', details: validation.error.flatten() });
+      }
+
+      const { email } = validation.data;
+      const updated = await prisma.user.update({
+        where: { id: userId },
+        data: { ...(email && { email }) },
+        select: { id: true, email: true, createdAt: true },
       });
 
-      return res.status(413).json({
-        error: 'Payload Too Large',
-        message: 'Request body exceeds 10MB limit',
-      });
+      // Invalidate profile cache
+      await RedisService.del(`user:profile:${userId}`);
+      return res.json(updated);
+    } catch (err: any) {
+      logger.error('[Users] PUT /profile error:', err.message);
+      return res.status(500).json({ error: 'Failed to update profile' });
     }
-    next(err);
   }
 );
+
+/**
+ * GET /api/users/me/ai-profile
+ * Returns AI behavior profile for the user (feedback stats + settings)
+ */
+app.get(
+  '/api/users/me/ai-profile',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+      const [settings, feedbackCount, totalEmails] = await Promise.all([
+        prisma.userSettings.findUnique({ where: { userId } }),
+        prisma.userFeedback.count({ where: { userId } }),
+        prisma.email.count({ where: { userId } }),
+      ]);
+
+      const aiProvider = process.env.AI_PROVIDER || 'openai';
+      return res.json({
+        aiProvider,
+        totalEmailsProcessed: totalEmails,
+        feedbackGiven: feedbackCount,
+        preferences: {
+          theme: settings?.theme || 'dark',
+          autoReply: settings?.autoReply || false,
+        },
+      });
+    } catch (err: any) {
+      logger.error('[Users] GET /me/ai-profile error:', err.message);
+      return res.status(500).json({ error: 'Failed to fetch AI profile' });
+    }
+  }
+);
+
+/**
+ * GET /api/users/me/dnd
+ * Get Do Not Disturb settings
+ */
+app.get(
+  '/api/users/me/dnd',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+      const settings = await prisma.userSettings.findUnique({ where: { userId } });
+      return res.json({
+        dndEnabled: settings?.dndEnabled || false,
+        dndStart: settings?.dndStart || null,
+        dndEnd: settings?.dndEnd || null,
+      });
+    } catch (err: any) {
+      logger.error('[Users] GET /me/dnd error:', err.message);
+      return res.status(500).json({ error: 'Failed to fetch DnD settings' });
+    }
+  }
+);
+
+const dndSchema = z.object({
+  dndEnabled: z.boolean(),
+  dndStart: z.string().regex(/^\d{2}:\d{2}$/).optional().nullable(),
+  dndEnd: z.string().regex(/^\d{2}:\d{2}$/).optional().nullable(),
+});
+
+/**
+ * POST /api/users/me/dnd
+ * Enable or disable Do Not Disturb mode
+ */
+app.post(
+  '/api/users/me/dnd',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+      const validation = dndSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ error: 'Invalid payload', details: validation.error.flatten() });
+      }
+
+      const { dndEnabled, dndStart, dndEnd } = validation.data;
+      const settings = await prisma.userSettings.upsert({
+        where: { userId },
+        update: { dndEnabled, dndStart: dndStart ?? null, dndEnd: dndEnd ?? null },
+        create: { userId, dndEnabled, dndStart: dndStart ?? null, dndEnd: dndEnd ?? null },
+      });
+
+      logger.info('[Users] DnD settings updated', { userId, dndEnabled });
+      return res.json({ dndEnabled: settings.dndEnabled, dndStart: settings.dndStart, dndEnd: settings.dndEnd });
+    } catch (err: any) {
+      logger.error('[Users] POST /me/dnd error:', err.message);
+      return res.status(500).json({ error: 'Failed to update DnD settings' });
+    }
+  }
+);
+
+/**
+ * POST /api/emails/:id/read
+ * Mark an email as read
+ */
+app.post(
+  '/api/emails/:id/read',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const id = req.params.id as string;
+
+      const email = await prisma.email.findUnique({ where: { id } });
+      if (!email || email.userId !== userId) return res.status(404).json({ error: 'Email not found' });
+
+      await prisma.email.update({ where: { id }, data: { status: 'READ' } });
+      return res.json({ message: 'Email marked as read' });
+    } catch (err: any) {
+      logger.error('[Emails] POST /:id/read error:', err.message);
+      return res.status(500).json({ error: 'Failed to mark email as read' });
+    }
+  }
+);
+
+/**
+ * POST /api/emails/:id/archive
+ * Archive an email
+ */
+app.post(
+  '/api/emails/:id/archive',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const id = req.params.id as string;
+
+      const email = await prisma.email.findUnique({ where: { id } });
+      if (!email || email.userId !== userId) return res.status(404).json({ error: 'Email not found' });
+
+      await prisma.email.update({ where: { id }, data: { status: 'ARCHIVED' } });
+      logger.info('[Emails] Email archived', { id, userId });
+      return res.json({ message: 'Email archived successfully' });
+    } catch (err: any) {
+      logger.error('[Emails] POST /:id/archive error:', err.message);
+      return res.status(500).json({ error: 'Failed to archive email' });
+    }
+  }
+);
+
+/**
+ * DELETE /api/emails/:id
+ * Permanently delete an email
+ */
+app.delete(
+  '/api/emails/:id',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      const id = req.params.id as string;
+
+      const email = await prisma.email.findUnique({ where: { id } });
+      if (!email || email.userId !== userId) return res.status(404).json({ error: 'Email not found' });
+
+      await prisma.email.delete({ where: { id } });
+      logger.info('[Emails] Email deleted', { id, userId });
+      return res.json({ message: 'Email deleted successfully' });
+    } catch (err: any) {
+      logger.error('[Emails] DELETE /:id error:', err.message);
+      return res.status(500).json({ error: 'Failed to delete email' });
+    }
+  }
+);
+
+/**
+ * GET /api/dashboard/heatmap
+ * Returns email volume by hour and day for heatmap visualization
+ */
+app.get(
+  '/api/dashboard/heatmap',
+  requireAuth,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const userId = req.user?.userId;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+      const days = parseInt(req.query.days as string) || 30;
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+      const emails = await prisma.email.findMany({
+        where: { userId, createdAt: { gte: since } },
+        select: { createdAt: true },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      // Build heatmap: { dayOfWeek: { hour: count } }
+      const heatmap: Record<number, Record<number, number>> = {};
+      for (let d = 0; d < 7; d++) {
+        heatmap[d] = {};
+        for (let h = 0; h < 24; h++) heatmap[d][h] = 0;
+      }
+
+      for (const email of emails) {
+        const d = email.createdAt.getDay();
+        const h = email.createdAt.getHours();
+        heatmap[d][h] = (heatmap[d][h] || 0) + 1;
+      }
+
+      return res.json({ heatmap, totalEmails: emails.length, days });
+    } catch (err: any) {
+      logger.error('[Dashboard] GET /heatmap error:', err.message);
+      return res.status(500).json({ error: 'Failed to generate heatmap' });
+    }
+  }
+);
+
+// Mount all routers
+app.use('/api/rag', ragRouter);
+app.use('/api/ai', aiRouter);
+app.use('/api/tasks', tasksRouter);
+app.use('/api/calendar/events', calendarRouter);
+app.use('/api/expenses', expensesRouter);
+app.use('/api/digests', digestsRouter);
+app.use('/api/notifications', notificationsRouter);
+app.use('/api/feedback', feedbackRouter);
+app.use('/api/integrations', integrationsRouter);
+
 
 // Start Server
 

@@ -9,7 +9,7 @@ export class RedisService {
     if (!this.client) {
       this.client = new Redis(REDIS_URL, {
         maxRetriesPerRequest: 1, // keep retries low so we fallback fast
-        connectTimeout: 1000,    // 1s timeout to connect
+        connectTimeout: 1000, // 1s timeout to connect
         lazyConnect: true,
       });
 
@@ -35,7 +35,11 @@ export class RedisService {
     }
   }
 
-  public static async setex(key: string, seconds: number, value: string): Promise<void> {
+  public static async setex(
+    key: string,
+    seconds: number,
+    value: string
+  ): Promise<void> {
     try {
       const client = this.getClient();
       if (client.status === 'ready' || client.status === 'connecting') {
@@ -43,6 +47,17 @@ export class RedisService {
       }
     } catch (err) {
       console.warn(`Redis SETEX error for key ${key}:`, err);
+    }
+  }
+
+  public static async del(key: string): Promise<void> {
+    try {
+      const client = this.getClient();
+      if (client.status === 'ready' || client.status === 'connecting') {
+        await client.del(key);
+      }
+    } catch (err) {
+      console.warn(`Redis DEL error for key ${key}:`, err);
     }
   }
 }

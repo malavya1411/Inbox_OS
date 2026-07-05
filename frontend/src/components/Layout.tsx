@@ -1,12 +1,8 @@
 import React, { useState } from 'react';
-import { 
-  Search, 
-  Bell, 
-  Moon,
-  Menu
-} from 'lucide-react';
+import { Search, Bell, Moon, Menu, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { SidebarNav } from './SidebarNav';
+import { FloatingActionButton } from './FloatingActionButton';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -14,44 +10,43 @@ interface LayoutProps {
   setActiveTab?: (tab: string) => void;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ 
-  children
-}) => {
+export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { user, logout } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   return (
     <div className="flex min-h-screen bg-bg-base text-gray-100 font-sans selection:bg-indigo-500/30 selection:text-white">
-      
       {/* ── Left Sidebar (Desktop) ────────────────────────────────────────────────── */}
       <aside className="hidden md:flex flex-col w-[260px] glass border-r border-white/5 h-screen sticky top-0 z-30 shrink-0">
         <SidebarNav />
       </aside>
 
       {/* ── Mobile Sidebar Drawer ────────────────────────────────────────────────── */}
-      <div className={`fixed inset-0 z-50 flex md:hidden transition-opacity duration-300 ${isMobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
+      <div
+        className={`fixed inset-0 z-50 flex md:hidden transition-opacity duration-300 ${isMobileMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+      >
         {/* Backdrop overlay */}
-        <div 
+        <div
           className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-300"
           onClick={() => setIsMobileMenuOpen(false)}
         />
-        
+
         {/* Mobile drawer container */}
-        <aside className={`relative flex flex-col w-[260px] bg-bg-base border-r border-white/10 h-full p-4 z-50 transition-transform duration-300 ease-in-out ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-          <SidebarNav 
-            isMobile 
-            onCloseMobileMenu={() => setIsMobileMenuOpen(false)} 
+        <aside
+          className={`relative flex flex-col w-[260px] bg-bg-base border-r border-white/10 h-full p-4 z-50 transition-transform duration-300 ease-in-out ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        >
+          <SidebarNav
+            isMobile
+            onCloseMobileMenu={() => setIsMobileMenuOpen(false)}
           />
         </aside>
       </div>
 
       {/* ── Main Content Area ────────────────────────────────────────────────────── */}
       <div className="flex flex-col flex-1 min-w-0">
-        
         {/* Main Navbar Header */}
         <header className="glass border-b border-white/5 px-4 md:px-8 py-4 flex items-center justify-between sticky top-0 z-20">
-          
           {/* Mobile menu trigger */}
           <button
             onClick={() => setIsMobileMenuOpen(true)}
@@ -75,9 +70,8 @@ export const Layout: React.FC<LayoutProps> = ({
 
           {/* Right Header Navigation */}
           <div className="flex items-center gap-4">
-            
             {/* Dark Mode toggle visual */}
-            <button 
+            <button
               className="p-3 rounded-xl hover:bg-white/5 text-gray-400 hover:text-white transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center"
               aria-label="Toggle dark mode"
             >
@@ -85,7 +79,7 @@ export const Layout: React.FC<LayoutProps> = ({
             </button>
 
             {/* Notification Bell */}
-            <button 
+            <button
               className="p-3 rounded-xl hover:bg-white/5 text-gray-400 hover:text-white transition-colors relative min-h-[44px] min-w-[44px] flex items-center justify-center"
               aria-label="Notifications"
             >
@@ -105,26 +99,33 @@ export const Layout: React.FC<LayoutProps> = ({
                   {user?.email || 'offline'}
                 </p>
               </div>
-              <button 
-                onClick={logout}
-                title="Log Out"
-                className="w-11 h-11 md:w-8 md:h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/10 transition-all active:scale-95 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0"
-              >
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-xs font-bold text-white shadow-md border border-white/10">
                 {user?.email ? user.email.substring(0, 2).toUpperCase() : 'OS'}
-              </button>
+              </div>
             </div>
 
-          </div>
+            <div className="h-6 w-px bg-white/10"></div>
 
+            {/* Logout Button */}
+            <button
+              onClick={logout}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 hover:text-rose-300 text-xs font-bold transition-all duration-200 active:scale-95 min-h-[40px] md:min-h-0"
+              title="Log Out"
+            >
+              <LogOut size={14} />
+              <span className="hidden sm:inline">Logout</span>
+            </button>
+          </div>
         </header>
 
         {/* Dashboard Content Portal */}
         <main className="flex-1 overflow-y-auto px-4 md:px-8 py-6 max-w-[1600px] w-full mx-auto">
           {children}
         </main>
-
       </div>
 
+      {/* Floating Action Button (Mobile) */}
+      <FloatingActionButton />
     </div>
   );
 };

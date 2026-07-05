@@ -7,7 +7,7 @@ WORKDIR /build
 
 # Install dependencies (leverage layer cache)
 COPY package*.json ./
-RUN npm ci --ignore-scripts
+RUN npm install --ignore-scripts
 
 # Copy source files and compile TypeScript
 COPY tsconfig.json ./
@@ -29,7 +29,7 @@ WORKDIR /usr/src/app
 
 # Install only production dependencies
 COPY package*.json ./
-RUN npm ci --omit=dev --ignore-scripts
+RUN npm install --omit=dev --ignore-scripts
 
 # Copy compiled output and Prisma artifacts from builder
 COPY --from=builder /build/dist ./dist

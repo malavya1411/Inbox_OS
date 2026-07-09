@@ -2,6 +2,7 @@ import { google } from 'googleapis';
 import { PrismaClient } from '@prisma/client';
 import { decrypt, encrypt } from '../utils/crypto';
 import { LinkAttachmentExtractorService } from './parser/link-attachment-extractor.service';
+import { EventBus } from './event-bus.service';
 
 const prisma = new PrismaClient();
 
@@ -133,7 +134,7 @@ export class GmailSyncService {
 
       // Save to DB
       const links = await LinkAttachmentExtractorService.extractLinks(bodyData);
-      await prisma.email.create({
+      const emailRecord = await prisma.email.create({
         data: {
           messageId: msg.id,
           inReplyTo,
@@ -149,6 +150,7 @@ export class GmailSyncService {
         },
       });
       syncedCount++;
+      await EventBus.publish('email.received', { emailId: emailRecord.id });
     }
 
     // Store the ID of the most recent message to avoid duplicates on the next run

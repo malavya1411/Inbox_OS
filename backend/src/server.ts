@@ -1424,7 +1424,7 @@ app.post('/api/integrations/gmail/sync', requireAuth, async (req: AuthenticatedR
           threadId = newThread.id;
         }
 
-        await prisma.email.create({
+        const emailRecord = await prisma.email.create({
           data: {
             messageId,
             inReplyTo,
@@ -1438,6 +1438,7 @@ app.post('/api/integrations/gmail/sync', requireAuth, async (req: AuthenticatedR
           },
         });
         syncedCount++;
+        await EventBus.publish('email.received', { emailId: emailRecord.id });
       } catch (msgErr: any) {
         console.warn(`Failed to sync message ${msg.id}:`, msgErr.message);
       }

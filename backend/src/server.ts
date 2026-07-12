@@ -63,16 +63,6 @@ if (!getApps().length) {
 }
 
 
-import { aiRouter } from './routes/ai.routes';
-import { calendarRouter } from './routes/calendar.routes';
-import { digestsRouter } from './routes/digests.routes';
-import { expensesRouter } from './routes/expenses.routes';
-import { feedbackRouter } from './routes/feedback.routes';
-import { integrationsRouter } from './routes/integrations.routes';
-import { notificationsRouter } from './routes/notifications.routes';
-import { ragRouter } from './routes/rag.routes';
-import { remindersRouter } from './routes/reminders.routes';
-import { tasksRouter } from './routes/tasks.routes';
 
 const app = express();
 const prisma = new PrismaClient();

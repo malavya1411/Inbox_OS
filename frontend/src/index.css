@@ -93,10 +93,10 @@
   }
 
   body.landing-page-active {
-    background-color: #faf7f2 !important;
-    color: #1d1d1d !important;
+    background-color: var(--color-bg) !important;
+    color: var(--color-ink) !important;
     font-family: 'Inter', sans-serif !important;
-    --avatar-border: #eae5da;
+    --avatar-border: var(--color-border);
     --avatar-font: 'Inter', sans-serif;
   }
 
@@ -395,4 +395,71 @@ select {
 select:focus {
   border-color: var(--color-primary) !important;
   box-shadow: 0 0 0 3px rgba(93, 107, 47, 0.1) !important;
+}
+
+/* ── Landing Page Dark Mode Overrides ─────────────────────────────────── */
+html.dark .landing-page-active .bg-white {
+  background-color: #18181b !important; /* zinc-900 surface */
+}
+html.dark .landing-page-active .bg-\[\#FAF7F2\] {
+  background-color: #09090b !important; /* zinc-950 background */
+}
+html.dark .landing-page-active .text-\[\#1D1D1D\] {
+  color: #f4f4f5 !important; /* zinc-100 primary text */
+}
+html.dark .landing-page-active .text-\[\#6B7280\] {
+  color: #a1a1aa !important; /* zinc-400 secondary/muted text */
+}
+html.dark .landing-page-active .border-\[\#EAE5DA\] {
+  border-color: #27272a !important; /* zinc-800 border */
+}
+html.dark .landing-page-active .border-\[\#EAE5DA\]\/20 {
+  border-color: rgba(39, 39, 42, 0.2) !important;
+}
+html.dark .landing-page-active .bg-\[\#EAE5DA\] {
+  background-color: #27272a !important;
+}
+html.dark .landing-page-active .hover\:bg-\[\#FAF7F2\]:hover {
+  background-color: #18181b !important;
+}
+html.dark .landing-page-active .hover\:bg-\[\#FAF7F2\]\/60:hover {
+  background-color: rgba(24, 24, 27, 0.6) !important;
+}
+html.dark .landing-page-active .hover\:text-\[\#1D1D1D\]:hover {
+  color: #f4f4f5 !important;
+}
+html.dark .landing-page-active .bg-white\/80 {
+  background-color: rgba(9, 9, 11, 0.8) !important;
+}
+html.dark .landing-page-active .bg-white\/65 {
+  background-color: rgba(9, 9, 11, 0.65) !important;
+}
+html.dark .landing-page-active .text-\[\#6B7280\]\/60 {
+  color: rgba(161, 161, 170, 0.6) !important;
+}
+html.dark .landing-page-active .text-\[\#6B7280\]\/70 {
+  color: rgba(161, 161, 170, 0.7) !important;
+}
+html.dark .landing-page-active .text-\[\#6B7280\]\/80 {
+  color: rgba(161, 161, 170, 0.8) !important;
+}
+html.dark .landing-page-active .text-\[\#6B7280\]\/85 {
+  color: rgba(161, 161, 170, 0.85) !important;
+}
+html.dark .landing-page-active .border-\[\#5F6B38\]\/10 {
+  border-color: rgba(119, 139, 70, 0.15) !important;
+}
+html.dark .landing-page-active .bg-\[\#5F6B38\]\/5 {
+  background-color: rgba(119, 139, 70, 0.08) !important;
+}
+
+/* Dark Mode Scrollbars */
+html.dark ::-webkit-scrollbar-track {
+  background: #18181b;
+}
+html.dark ::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+}
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
 }

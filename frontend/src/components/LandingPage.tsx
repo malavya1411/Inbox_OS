@@ -265,8 +265,24 @@ export const LandingPage: React.FC = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // Light/Dark toggle placeholder state
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  // Light/Dark toggle state synced with localStorage and html class
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme) {
+      return savedTheme === 'dark';
+    }
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  }, [isDarkMode]);
 
   // Active section tracking state
   const [activeSection, setActiveSection] = useState<string>('');
@@ -509,16 +525,16 @@ export const LandingPage: React.FC = () => {
               aria-label="Toggle theme placeholder"
             >
               {isDarkMode ? (
-                <Moon
-                  size={18}
-                  strokeWidth={1.5}
-                  className="rotate-12 transition-transform duration-300"
-                />
-              ) : (
                 <Sun
                   size={18}
                   strokeWidth={1.5}
                   className="transition-transform duration-300"
+                />
+              ) : (
+                <Moon
+                  size={18}
+                  strokeWidth={1.5}
+                  className="rotate-12 transition-transform duration-300"
                 />
               )}
             </button>
@@ -624,9 +640,9 @@ export const LandingPage: React.FC = () => {
                 aria-label="Toggle theme placeholder"
               >
                 {isDarkMode ? (
-                  <Moon size={18} strokeWidth={1.5} />
-                ) : (
                   <Sun size={18} strokeWidth={1.5} />
+                ) : (
+                  <Moon size={18} strokeWidth={1.5} />
                 )}
               </button>
               <button

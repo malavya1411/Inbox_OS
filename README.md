@@ -351,27 +351,21 @@ This monorepo isolates individual layers and clients under clean folders. All sy
 
 ```text
 InboxOS/
-├── assets/                     # Logos, screenshots, and branding assets
-├── backend/                    # Node.js backend server (Express + Prisma)
+├── .github/                    # Community files, PR templates, GitHub Actions
 ├── frontend/                   # React frontend client (Vite)
+├── backend/                    # Node.js backend server (Express + Prisma)
 ├── packages/                   # Decoupled libraries and shared modules
+├── scripts/                    # Build, setup, and deployment scripts
 ├── docs/                       # Developer manuals & architecture logs
 │   ├── api/                    # API specifications and Postman config
 │   ├── architecture/           # Architecture design records and schema docs
 │   ├── contributing/           # Contribution guidelines
 │   ├── setup/                  # Setup instructions
 │   └── workflows/              # Workflow definitions
-├── development/                # Developer-only workspace
-│   ├── prompts/                # AI prompt definitions
-│   ├── scratch/                # Local scratch scripts and dumps
-│   └── scripts/                # Development utility scripts
-├── infrastructure/             # Configurations for running the application
-│   ├── docker/                 # Docker Compose configurations
-│   ├── terraform/              # Terraform scripts for cloud provisioning
-│   ├── postgres/               # PostgreSQL initialization scripts
-│   ├── config/                 # Env and gitignore template configurations
-│   └── github/                 # GitHub actions configurations
 ├── .gitignore                  # Git tracking rules
+├── .firebaserc                 # Firebase CLI target configs (required for deployment)
+├── firebase.json               # Firebase rules and routing (required for deployment)
+├── docker-compose.yml          # Local full-stack orchestration
 ├── package.json                # Root package workspace definition
 └── README.md                   # Repository Hero and Reference manual (this file)
 ```
@@ -398,14 +392,14 @@ git clone https://github.com/inboxos/inboxos.git
 cd inboxos
 
 # 2. Copy and configure variables
-cp infrastructure/config/env/.env.example infrastructure/config/env/.env
-# Edit infrastructure/config/env/.env with your secrets
+cp scripts/config/env/.env.example scripts/config/env/.env
+# Edit scripts/config/env/.env with your secrets
 
 # 3. Spin up all services (PostgreSQL, Redis, Backend, Frontend)
-docker compose -f infrastructure/docker/docker-compose.yml up -d
+docker compose up -d
 
 # 4. Execute database migrations
-docker compose -f infrastructure/docker/docker-compose.yml exec backend npx prisma db push
+docker compose exec backend npx prisma db push
 
 # 5. Open the Dashboard UI
 # Access the dashboard at http://localhost
@@ -421,7 +415,7 @@ For active local debugging of individual services without Docker containerizatio
 ```bash
 cd backend
 npm install
-# Configure backend/.env or use infrastructure/config/env/.env
+# Configure backend/.env or use scripts/config/env/.env
 npm start
 ```
 

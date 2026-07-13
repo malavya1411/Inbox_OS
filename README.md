@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.svg" alt="INBOXOS - The Inbox Operating System" width="380" />
+  <img src="logo.svg" alt="INBOXOS - The Inbox Operating System" width="180" />
 </p>
 
 <p align="center">

@@ -70,6 +70,7 @@ jobs:
         run: npm run test
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/inboxos_test
+          ENVIRONMENT: local
 
       # ==========================================
       # Frontend Jobs

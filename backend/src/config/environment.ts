@@ -1,16 +1,20 @@
 import { logger } from '../utils/logger';
 
 // Load variables
-export const ENVIRONMENT = process.env.ENVIRONMENT || 'local';
+export const ENVIRONMENT = process.env.ENVIRONMENT;
 export const MOCK_GMAIL = process.env.MOCK_GMAIL === 'true';
 
 // Validate values
 const validEnvironments = ['local', 'staging', 'production'];
-if (!validEnvironments.includes(ENVIRONMENT)) {
-  const errMsg = `CRITICAL CONFIG FAILURE: Invalid ENVIRONMENT value "${ENVIRONMENT}". Must be one of: ${validEnvironments.join(', ')}`;
+if (!ENVIRONMENT || !validEnvironments.includes(ENVIRONMENT)) {
+  const errMsg = `CRITICAL CONFIG FAILURE: Invalid ENVIRONMENT value "${ENVIRONMENT}". ENVIRONMENT must be explicitly set and must be one of: ${validEnvironments.join(', ')}`;
   logger.error(errMsg);
   throw new Error(errMsg);
 }
+
+logger.info(
+  `[Environment] Successfully initialized with ENVIRONMENT=${ENVIRONMENT}`
+);
 
 // 1. Mock mode requires BOTH MOCK_GMAIL=true AND ENVIRONMENT=local
 export const IS_MOCK = MOCK_GMAIL && ENVIRONMENT === 'local';

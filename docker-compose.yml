@@ -50,6 +50,7 @@ services:
     environment:
       - PORT=8000
       - NODE_ENV=development
+      - ENVIRONMENT=local
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/inboxos?schema=public
       - REDIS_URL=redis://redis:6379/0
       - JWT_SECRET=replace_with_random_64_char_hex_string_for_dev_mode_only

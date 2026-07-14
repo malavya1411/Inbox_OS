@@ -57,6 +57,23 @@ describe('Three-Tier Environment System & Mock Gmail Client', () => {
     expect(message.data.payload.parts).toBeDefined();
   });
 
+  it('should throw an error if ENVIRONMENT is not explicitly set', () => {
+    delete process.env.ENVIRONMENT;
+    expect(() => {
+      require('../config/environment');
+    }).toThrow(/ENVIRONMENT must be explicitly set/);
+  });
+
+  it('should successfully boot with prod URL if ENVIRONMENT=production', () => {
+    process.env.ENVIRONMENT = 'production';
+    process.env.DATABASE_URL =
+      'postgresql://user:pass@my-supabase-prod.supabase.co:5432/db';
+
+    expect(() => {
+      require('../config/environment');
+    }).not.toThrow();
+  });
+
   it('should refuse to boot and throw error if MOCK_GMAIL=true but ENVIRONMENT=production', () => {
     process.env.MOCK_GMAIL = 'true';
     process.env.ENVIRONMENT = 'production';

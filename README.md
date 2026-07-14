@@ -22,9 +22,9 @@
 
 <div align="center">
 
-### 🌐 Live Website: https://inbox-os-frontend-lqrb.vercel.app/
+### Live Website: https://inbox-os-frontend-lqrb.vercel.app/
 
-### 🤖 Telegram Bot: https://t.me/InboxOs_mail_bot
+### Telegram Bot: https://t.me/InboxOs_mail_bot
 
 </div>
 
